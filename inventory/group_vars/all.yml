@@ -26,7 +26,7 @@ ansible_host_mapping:
   vault2:     "192.168.122.46"
   vault3:     "192.168.122.120"
   pcidss:     "192.168.122.119"
-  infra-app:  "192.168.122.139"
+  infra-app:  "192.168.122.72"
 
 node_id_mapping:
   vault1: "node1"

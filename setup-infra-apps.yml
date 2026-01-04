@@ -14,9 +14,9 @@
     
     # [컨테이너 이미지 버전 관리]
     img_traefik: "docker.io/library/traefik:v3.6.6"
-    img_postgres: "docker.io/library/postgres:15"
+    img_postgres: "docker.io/library/postgres:18"
     img_redis: "docker.io/library/redis:8-alpine"
-    img_netbox: "docker.io/netboxcommunity/netbox:v3.7"
+    img_netbox: "docker.io/netboxcommunity/netbox:latest"
     img_nexus: "docker.io/sonatype/nexus3:latest"
     img_semaphore: "semaphoreui/semaphore:latest"
 
@@ -44,22 +44,22 @@
       args:
         creates: "/var/lib/systemd/linger/{{ service_user }}"
 
+    - name: Install EPEL Release
+      dnf:
+        name: epel-release
+        state: present
+
     - name: Install Dependencies (DNF)
       dnf:
         name:
           - podman
           - podman-docker
+          - podman-compose
           - acl # ACL 필수
           - firewalld
           - systemd-container # [FIX] machinectl 사용을 위해 추가
-          - python3-pip # For installing podman-compose via pip
           - slirp4netns # Rootless networking
         state: present
-
-    - name: Install podman-compose via Pip
-      pip:
-        name: podman-compose
-        executable: pip3
 
     - name: Allow Unprivileged Ports (80/443)
       copy:
@@ -100,7 +100,7 @@
         - config/semaphore
         - config/prometheus
         - config/grafana
-        - data/postgres
+        - data/postgres-18
         - data/postgres-init
         - data/postgres-backup
         - data/redis
