@@ -1,0 +1,33 @@
+[vault_cluster]
+vault1
+vault2
+vault3
+
+
+[backup_servers]
+backup
+
+[clients]
+vault1
+vault2
+vault3
+pcidss
+infra-app
+
+[infra-svr]
+infra-app
+
+[services]
+#ansible hostname=ansible.infra.lan
+#netbox hostname=netbox.infra.lan
+#repo hostname=repo.infra.lan
+
+[all:vars]
+ansible_user=rocky
+# 가상 IP (Keepalived)
+vault_vip=192.168.122.100
+# 네트워크 인터페이스 (환경에 맞게 수정 필수, 예: eth0, ens192)
+interface_name=enp1s0
+# 도메인
+domain_name=infra.lan
+ansible_python_interpreter=/usr/bin/python3

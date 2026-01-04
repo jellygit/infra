@@ -1,0 +1,45 @@
+---
+- name: Infrastructure Base Configuration
+  hosts: all
+  become: yes
+  tasks:
+    - name: Set System Hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Update /etc/hosts with Infrastructure IPs
+      blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE MANAGED BLOCK: INFRA"
+        block: |
+          {{ infra_ips.backup_srv }} {{ infra_domains.backup }}
+          {{ infra_ips.vault_srv }} {{ infra_domains.vault }}
+        state: present
+    # -------------------------------------------------------
+    # [NEW] Trust Anchor 배포 (Vault TLS 통신 필수)
+    # -------------------------------------------------------
+    - name: Distribute Root CA Certificate
+      copy:
+        src: "certs/ca.crt" # site.yml에서 생성된 로컬 인증서 경로
+        dest: "/etc/pki/ca-trust/source/anchors/internal-ca.crt"
+        owner: root
+        group: root
+        mode: '0644'
+      register: ca_update
+
+    - name: Update CA Trust Store
+      command: /usr/bin/update-ca-trust
+      when: ca_update.changed
+    # -------------------------------------------------------
+    # [FIX] 충돌 파일 자동 정리 및 CA 갱신
+    # -------------------------------------------------------
+    - name: Cleanup conflicting certificate files
+      # 설명: /etc/pki/tls/certs/ 내에 심볼릭 링크가 아닌 '일반 파일' 형식의 해시 파일이 있으면 삭제합니다.
+      # 이는 update-ca-trust 실행 시 "File exists" 오류를 방지합니다.
+      shell: "find /etc/pki/tls/certs -maxdepth 1 -type f -name '????????.?' -delete"
+      when: ca_update.changed
+      ignore_errors: yes # 안전장치: 파일이 없어도 에러 무시
+
+    - name: Update CA Trust Store
+      command: /usr/bin/update-ca-trust
+      when: ca_update.changed

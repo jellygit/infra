@@ -1,0 +1,52 @@
+---
+# Python 인터프리터 경고 방지를 위해 고정
+ansible_python_interpreter: /usr/bin/python3
+
+# Host Connection Configuration
+# 동적으로 inventory_hostname에 해당하는 IP를 매핑에서 찾아 연결 주소로 사용
+ansible_host: "{{ ansible_host_mapping[inventory_hostname] | default(inventory_hostname) }}"
+
+# Node ID Configuration
+# 동적으로 node_id를 매핑에서 찾아 사용
+node_id: "{{ node_id_mapping[inventory_hostname] | default(inventory_hostname) }}"
+
+# 인프라 핵심 도메인 정의
+domain_root: "infra.lan"
+
+infra_domains:
+  backup: "backup.{{ domain_root }}"
+  vault: "vlt.{{ domain_root }}"
+  repo: "repo.{{ domain_root }}"
+  netbox: "netbox.{{ domain_root }}"
+  ansible: "ansible.{{ domain_root }}"
+
+ansible_host_mapping:
+  backup: "192.168.122.175"
+  vault1: "192.168.122.3"
+  vault2: "192.168.122.41"
+  vault3: "192.168.122.169"
+  pcidss: "192.168.122.250"
+  infra-app: "192.168.122.162"
+
+node_id_mapping:
+  vault1: "node1"
+  vault2: "node2"
+  vault3: "node3"
+  backup: "backup"
+  infra-app: "infra-app"
+
+# IDC/환경별 타겟 IP 매핑 (이 부분만 수정하면 환경 전환 가능)
+infra_ips:
+  backup_srv: "192.168.122.175"
+  vault_srv: "192.168.122.100"
+  management_net: "192.168.122.0/24"
+
+# 백업 경로 및 공통 설정
+nfs_root: "/vol/backup"
+nfs_os_path: "/vol/backup/os_images"
+vault_vip: "192.168.122.100"
+
+# NTP
+infra_ntp:
+  server_1: "192.168.122.1"
+  server_2: "192.168.122.1"

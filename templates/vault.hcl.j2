@@ -1,0 +1,35 @@
+# 보안 강화 설정
+ui = true
+disable_mlock = false # mlock 사용 (스왑 방지)
+
+# 스토리지 설정 (Raft Integrated Storage)
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "{{ node_id }}"
+
+  {% for host in groups['vault_cluster'] %}
+  retry_join {
+    leader_api_addr = "https://{{ hostvars[host]['ansible_host'] }}:8200"
+    leader_ca_cert_file = "/opt/vault/tls/ca.crt"
+    leader_client_cert_file = "/opt/vault/tls/vault.crt"
+    leader_client_key_file = "/opt/vault/tls/vault.key"
+  }
+  {% endfor %}
+}
+
+# 리스너 설정 (TLS 필수)
+listener "tcp" {
+  address       = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file = "/opt/vault/tls/vault.crt"
+  tls_key_file  = "/opt/vault/tls/vault.key"
+  tls_client_ca_file = "/opt/vault/tls/ca.crt"
+}
+listener "tcp" {
+  address       = "127.0.0.1:8202"
+  tls_disable   = "true"
+}
+ 
+# 주소 설정
+api_addr = "https://{{ ansible_host }}:8200"
+cluster_addr = "https://{{ ansible_host }}:8201"

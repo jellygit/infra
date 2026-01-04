@@ -1,0 +1,4 @@
+certs
+.venv
+.python-version
+uv.lock

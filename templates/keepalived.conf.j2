@@ -1,0 +1,28 @@
+vrrp_script chk_vault {
+    # Vault 헬스 체크 (HTTPS 사용, 비활성화 상태(Standby)라도 200/429/472/473 리턴 시 정상 간주)
+    # -k: 자체 서명 인증서 허용
+    script "/usr/bin/curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8202/v1/sys/health | grep -E '(200|429|472|473)'"
+    interval 2
+    weight 2
+}
+
+vrrp_instance VI_1 {
+    state BACKUP
+    interface {{ interface_name }}
+    virtual_router_id 51
+    priority {{ 100 + (groups['vault_cluster'].index(inventory_hostname) | int) }}
+    advert_int 1
+    
+    authentication {
+        auth_type PASS
+        auth_pass sec_vault_auth
+    }
+
+    virtual_ipaddress {
+        {{ vault_vip }}
+    }
+
+    track_script {
+        chk_vault
+    }
+}

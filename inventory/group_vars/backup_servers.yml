@@ -1,0 +1,5 @@
+---
+nfs_export_root: "/vol/backup"
+nfs_os_backup_subdir: "os_images"
+nfs_allowed_network: "{{ infra_ips.management_net }}"
+nfs_mount_options: "rw,sync,no_root_squash,no_all_squash"

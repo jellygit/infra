@@ -1,0 +1,19 @@
+[Unit]
+Description=Podman Compose Infrastructure Stack
+Requires=user@{{ service_uid }}.service
+After=user@{{ service_uid }}.service network-online.target vault-agent.service
+
+[Service]
+User={{ service_user }}
+Group={{ service_user }}
+Type=simple
+WorkingDirectory={{ base_dir }}
+Environment="XDG_RUNTIME_DIR=/run/user/{{ service_uid }}"
+Environment="PODMAN_SYSTEMD_UNIT=%n"
+ExecStart=/usr/bin/podman-compose up
+ExecStop=/usr/bin/podman-compose down
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

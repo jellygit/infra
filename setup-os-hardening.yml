@@ -1,0 +1,102 @@
+---
+- name: OS Hardening (PCI-DSS v4.0 & ISMS-P Compliant)
+  hosts: all
+  become: yes
+  tasks:
+    # 1. 필수 보안 패키지 설치 (가장 먼저 실행)
+    - name: Install Security Audit Packages
+      dnf:
+        name: audit
+        state: present
+
+    # 2. Auditd 서비스 활성화 및 시작
+    - name: Ensure Auditd is running
+      systemd:
+        name: auditd
+        state: started
+        enabled: yes
+    # [PCI 8.3.6] 패스워드 최소 길이 12자 이상 (PCI-DSS v4.0 기준 적용)
+    - name: Set password complexity and policy
+      copy:
+        dest: /etc/security/pwquality.conf
+        content: |
+          minlen = 12
+          dcredit = -1
+          ucredit = -1
+          ocredit = -1
+          lcredit = -1
+          dictcheck = 1
+
+    # [PCI 8.3.4 / ISMS-P 2.5.4] 10회 실패 시 30분 잠금 (ISMS-P 권고 반영)
+    - name: Configure account lockout policy
+      copy:
+        dest: /etc/security/faillock.conf
+        content: |
+          deny = 10
+          unlock_time = 1800
+          root_unlock_time = 1800
+
+    # [PCI 2.2.3] 불필요한 서비스 및 프로토콜 제거
+    - name: Disable insecure services
+      dnf:
+        name: [telnet-server, rsh-server, ypserv, tftp-server, vsftpd, talk-server]
+        state: absent
+
+    # [PCI 2.2.7] 강력한 암호화 알고리즘만 허용 (SSH 강화)
+    - name: Hardening SSH Configuration
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: "^PermitRootLogin", line: "PermitRootLogin prohibit-password" }
+        - { regexp: "^MaxAuthTries", line: "MaxAuthTries 3" }
+        - { regexp: "^LoginGraceTime", line: "LoginGraceTime 60" }
+        - { regexp: "^KexAlgorithms", line: "KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256" }
+        - { regexp: "^Ciphers", line: "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com" }
+      notify: Restart SSHD
+
+    # [PCI 10.2.1] 사용자 행위 로깅 및 감사 강화
+    - name: Ensure auditd is installed
+      dnf:
+        name: audit
+        state: present
+
+    - name: Ensure audit rules directory exists
+      file:
+        path: /etc/audit/rules.d
+        state: directory
+        mode: '0750'
+
+    - name: Advanced Auditd Rules
+      blockinfile:
+        path: /etc/audit/rules.d/audit.rules
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK: PCI-DSS"
+        block: |
+          # 모든 권한 상승 및 명령어 실행 기록
+          -a always,exit -F arch=b64 -S execve -k audit_cmds
+          # 중요 파일 접근 감시
+          -w /etc/shadow -p wa -k auth_files
+          -w /etc/sudoers -p wa -k priv_esc
+          # 시스템 시간 변경 감시
+          -a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time_change
+      notify: Restart Auditd
+
+    # [PCI 8.2.8] 세션 타임아웃 15분 (PCI-DSS 기준 적용)
+    - name: Set Global Session Timeout (900s)
+      copy:
+        dest: /etc/profile.d/timeout.sh
+        content: "readonly TMOUT=900; export TMOUT"
+
+  handlers:
+    - name: Restart SSHD
+      service: name=sshd state=restarted
+    # [수정됨] 절대 경로 대신 service 모듈 사용 권장
+    # RHEL/Rocky 계열에서 auditd는 service 모듈로 재시작이 불가능한 경우가 많음 (커널 스레드라 service restart 실패함)
+    # 따라서 augenrules --load를 사용하는 것이 맞으나, 경로를 동적으로 찾거나 /usr/sbin을 명시해야 함.
+    - name: Restart Auditd
+      shell: "/usr/sbin/augenrules --load"
+      # 만약 augenrules가 실패하면(규칙 오류 등), auditd 서비스 재시작 시도 (불변의 법칙)
+      ignore_errors: yes
+      notify: Reload Auditd Service

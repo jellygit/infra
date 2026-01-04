@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # [1] Edge Router
+  traefik:
+    image: {{ img_traefik }}
+    container_name: infra-traefik
+    restart: always
+    user: "0:0"
+    security_opt:
+      - label=disable
+    command:
+      - "--providers.docker=true"
+      - "--api.insecure=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic.yaml"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # HTTP -> HTTPS 리다이렉트
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # Dashboard
+    volumes:
+      - /run/user/{{ service_uid }}/podman/podman.sock:/var/run/docker.sock:Z
+      - {{ base_dir }}/config/traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - {{ base_dir }}/config/traefik/acme.json:/acme.json
+      - /etc/vault.d/generated/certs:/certs:ro
+    networks:
+      - infra-net
+
+  # [2] Database (Shared)
+  postgres:
+    image: {{ img_postgres }}
+    container_name: infra-postgres
+    restart: always
+    env_file:
+      - /etc/vault.d/generated/infra.env
+    volumes:
+      - {{ base_dir }}/data/postgres:/var/lib/postgresql/data:Z
+      - {{ base_dir }}/data/postgres-init:/docker-entrypoint-initdb.d:Z
+    networks:
+      - infra-net
+
+  redis:
+    image: {{ img_redis }}
+    container_name: infra-redis
+    restart: always
+    volumes:
+      - {{ base_dir }}/data/redis:/data:Z
+    networks:
+      - infra-net
+
+  # [3] NetBox (IPAM/DCIM)
+  netbox:
+    image: {{ img_netbox }}
+    container_name: infra-netbox
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - /etc/vault.d/generated/infra.env
+    volumes:
+      - {{ base_dir }}/data/netbox-media:/opt/netbox/netbox/media:Z
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netbox.rule=Host(`netbox.{{ domain_root }}`)"
+      - "traefik.http.routers.netbox.entrypoints=websecure"
+      - "traefik.http.routers.netbox.tls=true"
+      - "traefik.http.services.netbox.loadbalancer.server.port=8083"
+    networks:
+      - infra-net
+
+  netbox-worker:
+    image: {{ img_netbox }}
+    container_name: infra-netbox-worker
+    restart: always
+    depends_on:
+      - netbox
+    env_file:
+      - /etc/vault.d/generated/infra.env
+    command: /opt/netbox/venv/bin/python3 /opt/netbox/netbox/manage.py rqworker
+    volumes:
+      - {{ base_dir }}/data/netbox-media:/opt/netbox/netbox/media:Z
+    networks:
+      - infra-net
+
+  # [4] Nexus (Repository)
+  nexus:
+    image: {{ img_nexus }}
+    container_name: infra-nexus
+    restart: always
+    environment:
+      - INSTALL4J_ADD_VM_PARAMS=-Xms2g -Xmx2g -Djava.util.prefs.userRoot=/nexus-data/javaprefs
+    volumes:
+      - {{ base_dir }}/data/nexus-data:/nexus-data:Z,U
+    labels:
+      - "traefik.enable=true"
+      
+      # ---------------------------------------------------------
+      # 1. Nexus Web Console (8081)
+      # ---------------------------------------------------------
+      - "traefik.http.routers.nexus-web.rule=Host(`repo.{{ domain_root }}`)"
+      - "traefik.http.routers.nexus-web.entrypoints=websecure"
+      - "traefik.http.routers.nexus-web.tls=true"
+      # [FIX] 서비스 이름 명시적 연결
+      - "traefik.http.routers.nexus-web.service=nexus-web-svc"
+      - "traefik.http.services.nexus-web-svc.loadbalancer.server.port=8081"
+
+      # ---------------------------------------------------------
+      # 2. Nexus Docker Registry (8082)
+      # ---------------------------------------------------------
+      - "traefik.http.routers.nexus-docker.rule=Host(`docker.{{ domain_root }}`)"
+      - "traefik.http.routers.nexus-docker.entrypoints=websecure"
+      - "traefik.http.routers.nexus-docker.tls=true"
+      # [FIX] 서비스 이름 명시적 연결 (위와 다른 서비스명 사용)
+      - "traefik.http.routers.nexus-docker.service=nexus-docker-svc"
+      - "traefik.http.services.nexus-docker-svc.loadbalancer.server.port=8082"
+    networks:
+      - infra-net
+
+  # [5] Semaphore (Ansible Web UI)
+  semaphore:
+    image: {{ img_semaphore }}
+    container_name: infra-semaphore
+    restart: always
+    depends_on:
+      - postgres
+    env_file:
+      - /etc/vault.d/generated/infra.env
+    environment:
+      - SEMAPHORE_DB_DIALECT=postgres
+      - SEMAPHORE_DB_HOST=postgres
+      - SEMAPHORE_PLAYBOOK_PATH=/tmp/semaphore
+      #- SEMAPHORE_ADMIN_PASSWORD={{ lookup('password', '/dev/null length=15 chars=ascii_letters,digits') }}
+    volumes:
+      - {{ base_dir }}/data/semaphore:/var/lib/semaphore:Z,U
+      - {{ base_dir }}/config/semaphore:/etc/semaphore:Z,U
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.semaphore.rule=Host(`ansible.{{ domain_root }}`)"
+      - "traefik.http.routers.semaphore.entrypoints=websecure"
+      - "traefik.http.routers.semaphore.tls=true"
+      - "traefik.http.services.semaphore.loadbalancer.server.port=3000"
+    networks:
+      - infra-net
+
+networks:
+  infra-net:
+    driver: bridge

@@ -1,0 +1,87 @@
+# [FIX] 권한 문제 해결: vault 계정이 쓰기 가능한 경로로 변경
+pid_file = "/etc/vault.d/vault-agent.pid"
+
+vault {
+  address = "{{ vault_addr }}"
+  # setup-infra-base.yml에서 배포한 CA 인증서 사용
+  ca_cert = "/etc/pki/ca-trust/source/anchors/internal-ca.crt"
+}
+
+auto_auth {
+  method "approle" {
+    config = {
+      role_id_file_path = "/etc/vault.d/role_id"
+      secret_id_file_path = "/etc/vault.d/secret_id"
+      remove_secret_id_file_after_reading = false
+    }
+  }
+
+  sink "file" {
+    config = {
+      path = "/etc/vault.d/agent-token"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------
+# [Template 1] HTTPS 인증서
+# ---------------------------------------------------------------------
+{% raw %}
+template {
+  destination = "/etc/vault.d/generated/certs/fullchain.pem"
+  perms = "0644"
+  contents = <<EOH
+{{- with secret "secret/data/certs/wildcard-infra" -}}
+{{ .Data.data.cert }}
+{{- end -}}
+EOH
+}
+
+template {
+  destination = "/etc/vault.d/generated/certs/privkey.pem"
+  perms = "0640"
+  contents = <<EOH
+{{- with secret "secret/data/certs/wildcard-infra" -}}
+{{ .Data.data.key }}
+{{- end -}}
+EOH
+}
+
+# ---------------------------------------------------------------------
+# [Template 2] 통합 환경변수 파일 (.env)
+# ---------------------------------------------------------------------
+template {
+  destination = "/etc/vault.d/generated/infra.env"
+  perms = "0640"
+  contents = <<EOH
+{{ with secret "secret/data/infra/env" }}
+# PostgreSQL Common
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD='{{ .Data.data.DB_ROOT_PASS }}'
+DB_HOST=postgres
+
+# NetBox
+DB_NAME=netbox
+DB_USER=netbox
+DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'
+REDIS_HOST=redis
+REDIS_PORT=6379
+SECRET_KEY='{{ .Data.data.SECRET_KEY }}'
+ALLOWED_HOSTS='*'
+{% endraw %}
+# [중요] Ansible 변수({{ domain_root }})를 쓰기 위해 raw 블록을 잠시 닫습니다.
+CSRF_TRUSTED_ORIGINS='https://netbox.{{ domain_root }}'
+
+{% raw %}
+# Semaphore
+SEMAPHORE_DB_USER=semaphore
+SEMAPHORE_DB_PASS='{{ .Data.data.SEMAPHORE_DB_PASS }}'
+SEMAPHORE_DB_NAME=semaphore
+{% endraw %}
+# [중요] Ansible 변수 재사용
+SEMAPHORE_ADMIN_email='admin@{{ domain_root }}'
+{% raw %}
+{{ end }}
+EOH
+}
+{% endraw %}
