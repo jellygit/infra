@@ -27,7 +27,7 @@ services:
       - /run/user/{{ service_uid }}/podman/podman.sock:/var/run/docker.sock:Z
       - {{ base_dir }}/config/traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
       - {{ base_dir }}/config/traefik/acme.json:/acme.json
-      - /etc/vault.d/generated/certs:/certs:ro
+      - {{ base_dir }}/config/certs:/certs:ro
     networks:
       - infra-net
 
@@ -37,7 +37,7 @@ services:
     container_name: infra-postgres
     restart: always
     env_file:
-      - /etc/vault.d/generated/infra.env
+      - {{ base_dir }}/config/infra.env
     volumes:
       - {{ base_dir }}/data/postgres:/var/lib/postgresql/data:Z
       - {{ base_dir }}/data/postgres-init:/docker-entrypoint-initdb.d:Z
@@ -62,7 +62,7 @@ services:
       - postgres
       - redis
     env_file:
-      - /etc/vault.d/generated/infra.env
+      - {{ base_dir }}/config/infra.env
     volumes:
       - {{ base_dir }}/data/netbox-media:/opt/netbox/netbox/media:Z
     labels:
@@ -70,7 +70,7 @@ services:
       - "traefik.http.routers.netbox.rule=Host(`netbox.{{ domain_root }}`)"
       - "traefik.http.routers.netbox.entrypoints=websecure"
       - "traefik.http.routers.netbox.tls=true"
-      - "traefik.http.services.netbox.loadbalancer.server.port=8083"
+      - "traefik.http.services.netbox.loadbalancer.server.port=8080"
     networks:
       - infra-net
 
@@ -81,7 +81,7 @@ services:
     depends_on:
       - netbox
     env_file:
-      - /etc/vault.d/generated/infra.env
+      - {{ base_dir }}/config/infra.env
     command: /opt/netbox/venv/bin/python3 /opt/netbox/netbox/manage.py rqworker
     volumes:
       - {{ base_dir }}/data/netbox-media:/opt/netbox/netbox/media:Z
@@ -130,7 +130,7 @@ services:
     depends_on:
       - postgres
     env_file:
-      - /etc/vault.d/generated/infra.env
+      - {{ base_dir }}/config/infra.env
     environment:
       - SEMAPHORE_DB_DIALECT=postgres
       - SEMAPHORE_DB_HOST=postgres

@@ -2,12 +2,12 @@
 -- [Optimization] Secrets are injected from local infra.env file (parsed by Ansible)
 
 -- NetBox DB
-CREATE USER netbox WITH PASSWORD 'CHAGEME';
+CREATE USER netbox WITH PASSWORD '{{ db_password }}';
 CREATE DATABASE netbox OWNER netbox;
 GRANT ALL PRIVILEGES ON DATABASE netbox TO netbox;
 
 -- Semaphore DB
-CREATE USER semaphore WITH PASSWORD 'CHAGNEME';
+CREATE USER semaphore WITH PASSWORD '{{ semaphore_db_pass }}';
 CREATE DATABASE semaphore OWNER semaphore;
 GRANT ALL PRIVILEGES ON DATABASE semaphore TO semaphore;
 \q

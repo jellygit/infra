@@ -65,7 +65,11 @@ fi
 # ------------------------------------------------------------------------------
 # 4. 환경변수 업로드 (secret/infra/env)
 # ------------------------------------------------------------------------------
+# ...
 echo ">>> [4/4] 환경변수 데이터 주입 (secret/infra/env)..."
+
+# Generate a strong secret key (50+ chars)
+GENERATED_SECRET_KEY=$(openssl rand -hex 50)
 
 # 주의: 실제 운영 시에는 '0000' 대신 강력한 난수 비밀번호를 사용해야 합니다.
 vault kv put secret/infra/env \
@@ -77,16 +81,10 @@ vault kv put secret/infra/env \
   DB_PASSWORD='NETBOX_PASSWD' \
   REDIS_HOST='redis' \
   REDIS_PORT='6379' \
-  SECRET_KEY='REDIS_KEY' \
+  SECRET_KEY="$GENERATED_SECRET_KEY" \
   ALLOWED_HOSTS='*' \
-  MINIO_ROOT_USER='s3-master' \
-  MINIO_ROOT_PASSWORD='MINIO_PASSWD' \
-  SEMAPHORE_ADMIN='semaphore' \
-  SEMAPHORE_ADMIN_EMAIL='semaphore@example.com' \
-  SEMAPHORE_ADMIN_NAME='SEMAPHORE' \
-  SEMAPHORE_ADMIN_PASSWORD='SEMAPHORE_ADMIN' \
-  SEMAPHORE_DB_PASS='SEMAPHORE_DB_PASS' \
-  SEMAPHORE_DB_USER='semaphore'
+
+
 
 if [ $? -eq 0 ]; then
   echo "✅ 성공: 환경변수 데이터가 저장되었습니다."

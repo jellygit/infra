@@ -14,7 +14,7 @@
     # Dynamically construct the full SAN list
     vault_full_san_list: >-
       {{ [
-        "DNS:*.{{ domain_name }}",
+        "DNS:*." ~ domain_name,
         "DNS:localhost",
         "IP:127.0.0.1"
       ] + (vault_san_ips | map('regex_replace', '^(.*)$', 'IP:\1') | list) }}
@@ -150,6 +150,7 @@
         - { src: "{{ cert_dir }}/ca.crt", dest: "/opt/vault/tls/ca.crt" }
         - { src: "{{ cert_dir }}/vault.crt", dest: "/opt/vault/tls/vault.crt" }
         - { src: "{{ cert_dir }}/vault.key", dest: "/opt/vault/tls/vault.key" }
+      notify: Restart Vault
 
     - name: Copy CA certificate to system trust anchor
       copy:

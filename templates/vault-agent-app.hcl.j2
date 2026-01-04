@@ -28,7 +28,7 @@ auto_auth {
 # ---------------------------------------------------------------------
 {% raw %}
 template {
-  destination = "/etc/vault.d/generated/certs/fullchain.pem"
+  destination = "/opt/infra/config/certs/fullchain.pem"
   perms = "0644"
   contents = <<EOH
 {{- with secret "secret/data/certs/wildcard-infra" -}}
@@ -38,7 +38,7 @@ EOH
 }
 
 template {
-  destination = "/etc/vault.d/generated/certs/privkey.pem"
+  destination = "/opt/infra/config/certs/privkey.pem"
   perms = "0640"
   contents = <<EOH
 {{- with secret "secret/data/certs/wildcard-infra" -}}
@@ -51,8 +51,8 @@ EOH
 # [Template 2] 통합 환경변수 파일 (.env)
 # ---------------------------------------------------------------------
 template {
-  destination = "/etc/vault.d/generated/infra.env"
-  perms = "0640"
+  destination = "/opt/infra/config/infra.env"
+  perms = "0644"
   contents = <<EOH
 {{ with secret "secret/data/infra/env" }}
 # PostgreSQL Common
@@ -61,6 +61,7 @@ POSTGRES_PASSWORD='{{ .Data.data.DB_ROOT_PASS }}'
 DB_HOST=postgres
 
 # NetBox
+DB_WAIT_DEBUG=1
 DB_NAME=netbox
 DB_USER=netbox
 DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'

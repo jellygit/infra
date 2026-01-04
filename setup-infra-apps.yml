@@ -32,21 +32,34 @@
         create_home: yes
         state: present
 
+    - name: Add vault user to infra-svc group
+      user:
+        name: vault
+        groups: "{{ service_user }}"
+        append: yes
+      when: service_user is defined
+
     - name: Enable Linger for Rootless Podman
       command: loginctl enable-linger {{ service_user }}
       args:
         creates: "/var/lib/systemd/linger/{{ service_user }}"
 
-    - name: Install Dependencies
+    - name: Install Dependencies (DNF)
       dnf:
         name:
           - podman
           - podman-docker
-          - podman-compose
           - acl # ACL 필수
           - firewalld
           - systemd-container # [FIX] machinectl 사용을 위해 추가
+          - python3-pip # For installing podman-compose via pip
+          - slirp4netns # Rootless networking
         state: present
+
+    - name: Install podman-compose via Pip
+      pip:
+        name: podman-compose
+        executable: pip3
 
     - name: Allow Unprivileged Ports (80/443)
       copy:
@@ -95,6 +108,46 @@
         - data/netbox-media
         - data/semaphore
 
+    # -------------------------------------------------------
+    # [NEW] Podman 스토리지 설정 (홈 디렉토리 용량 부족 해결)
+    # -------------------------------------------------------
+    - name: Create Podman Custom Storage Directory
+      file:
+        path: "{{ base_dir }}/storage"
+        state: directory
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+        mode: '0700'
+
+    - name: Ensure Podman Config Directory Exists
+      file:
+        path: "/home/{{ service_user }}/.config/containers"
+        state: directory
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+        mode: '0700'
+
+    - name: Configure Podman Storage Path
+      copy:
+        dest: "/home/{{ service_user }}/.config/containers/storage.conf"
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+        mode: '0644'
+        content: |
+          [storage]
+          driver = "overlay"
+          graphroot = "{{ base_dir }}/storage"
+
+    - name: Configure Podman Networking (Use slirp4netns)
+      copy:
+        dest: "/home/{{ service_user }}/.config/containers/containers.conf"
+        owner: "{{ service_user }}"
+        group: "{{ service_user }}"
+        mode: '0644'
+        content: |
+          [network]
+          default_rootless_network_cmd = "slirp4netns"
+
     - name: Create ACME JSON for Traefik
       file:
         path: "{{ base_dir }}/config/traefik/acme.json"
@@ -115,15 +168,26 @@
         mode: '0640'
       notify: Restart Vault Agent
 
-    - name: Grant ACL to infra-svc for Vault Generated Files
+    - name: Ensure Vault Generated Directory Exists
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ service_user }}" # Owner is infra-svc
+        group: "{{ service_user }}"
+        mode: '0750'
+      loop:
+        - "{{ base_dir }}/config/certs"
+
+    - name: Grant ACL to vault user for writing secrets
       acl:
-        path: /etc/vault.d/generated
-        entity: "{{ service_user }}"
+        path: "{{ item }}"
+        entity: vault
         etype: user
-        permissions: rx
-        recursive: yes
-        default: yes
+        permissions: rwx
         state: present
+      loop:
+        - "{{ base_dir }}/config"
+        - "{{ base_dir }}/config/certs"
     
     # [핵심 변경] Vault Agent가 파일을 생성할 때까지 대기
     # 핸들러가 실행되기 전이라도 즉시 재시작하여 파일을 생성하도록 유도
@@ -134,14 +198,14 @@
       
     - name: Wait for infra.env to be populated
       wait_for:
-        path: /etc/vault.d/generated/infra.env
-        timeout: 60
+        path: "{{ base_dir }}/config/infra.env"
+        timeout: 180 # Increased timeout to 180 seconds
         search_regex: "DB_PASSWORD="
 
     # [핵심 변경] 원격 서버의 infra.env 파일을 읽어옴 (Slurp)
     - name: Read generated infra.env from remote host
       slurp:
-        src: /etc/vault.d/generated/infra.env
+        src: "{{ base_dir }}/config/infra.env"
       register: slurp_infra_env
 
     # [핵심 변경] 파일 내용 파싱하여 변수로 등록
