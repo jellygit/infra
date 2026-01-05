@@ -64,42 +64,38 @@ ansible-playbook -i inventory/hosts site.yml
 graph TD
     user[User / Admin] -->|Ansible Playbook| controller[Ansible Controller]
     
-    subgraph "Managed Infrastructure (Rocky Linux 10)"
-        style "Managed Infrastructure (Rocky Linux 10)" fill:#f9f9f9,stroke:#333,stroke-width:2px
+    subgraph infra [Managed Infrastructure]
         direction TB
         
-        subgraph "Vault HA Cluster"
-            style "Vault HA Cluster" fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+        subgraph vault_ha [Vault HA Cluster]
             vip(("VIP: 192.168.122.100"))
-            style vip fill:#ffcc80,stroke:#f57c00,stroke-width:2px
             
             v1[Vault 1]
             v2[Vault 2]
             v3[Vault 3]
             
-            v1 <-->|Raft Consensus| v2
-            v2 <-->|Raft Consensus| v3
-            v3 <-->|Raft Consensus| v1
+            v1 <--> v2
+            v2 <--> v3
+            v3 <--> v1
             
-            vip -.->|VRRP Route| v3
+            vip -.-> v3
         end
         
-        subgraph "Standard Nodes (Common Role)"
-            style "Standard Nodes (Common Role)" fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+        subgraph common_nodes [Standard Nodes]
             backup[Backup Server]
             app[Infra Apps]
             pci[PCI-DSS Nodes]
         end
     end
     
-    controller -->|SSH (Common + Vault Roles)| v1 & v2 & v3
-    controller -->|SSH (Common Role)| backup & app & pci
+    controller --> v1 & v2 & v3
+    controller --> backup & app & pci
     
-    backup & app & pci -->|HTTPS (TLS)| vip
+    backup & app & pci -->|HTTPS| vip
 ```
 
 ## 🛠 주요 수정 사항 (Recent Updates)
 
 - **Vault HA 안정화**: Vault가 봉인(Sealed) 상태일 때도 헬스 체크를 통과하도록 수정하여 관리자가 VIP를 통해 Unseal 작업을 수행할 수 있도록 개선.
-- **SELinux 호환성**: Keepalived가 비표준 포트(8202)를 통해 Vault 상태를 체크할 때 발생하는 차단 문제를 해결하기 위해 사용자 정의 SELinux 정책 모듈 추가.
+- **SELinux 호환성**: Keepalived가 비표준 포트(8202)를 통해 Vault 상태를 체크할 때 발생하는 차단 문제를 해결하기 위해 사용자 정의 SEL인 정책 모듈 추가.
 - **Rocky 10 대응**: `audit-rules` 패키지 명시적 설치를 통해 `augenrules` 명령어 오류 해결.
