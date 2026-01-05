@@ -1,0 +1,14 @@
+---
+- name: Reload Systemd
+  systemd:
+    daemon_reload: yes
+
+- name: Restart Vault
+  systemd:
+    name: vault
+    state: restarted
+
+- name: Restart Keepalived
+  systemd:
+    name: keepalived
+    state: restarted

@@ -1,0 +1,138 @@
+---
+- name: Set Vault SAN facts
+  set_fact:
+    vault_san_ips:
+      - "{{ vault_vip }}"
+      - "{{ ansible_host_mapping.vault1 }}"
+      - "{{ ansible_host_mapping.vault2 }}"
+      - "{{ ansible_host_mapping.vault3 }}"
+
+- name: Set Vault Full SAN List
+  set_fact:
+    vault_full_san_list: >-
+      {{ [ "DNS:*." ~ domain_name, "DNS:localhost", "IP:127.0.0.1" ] + (vault_san_ips | map('regex_replace', '^(.*)$', 'IP:\1') | list) }}
+
+- name: Import Certificate Generation Tasks
+  import_tasks: certificates.yml
+
+- name: Install EPEL and Dependencies
+  dnf:
+    name:
+      - epel-release
+      - yum-utils
+      - curl
+      - jq
+    state: present
+
+- name: Add HashiCorp Repo
+  command: dnf config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+  args:
+    creates: /etc/yum.repos.d/hashicorp.repo
+
+- name: Install Vault and Keepalived
+  dnf:
+    name:
+      - vault
+      - keepalived
+    state: present
+
+- name: Import SELinux Configuration
+  import_tasks: selinux.yml
+
+- name: Enable mlock in systemd for Vault
+  lineinfile:
+    path: /usr/lib/systemd/system/vault.service
+    regexp: '^LimitMEMLOCK='
+    line: 'LimitMEMLOCK=infinity'
+  notify: Reload Systemd
+
+- name: Ensure Firewalld is installed and running
+  block:
+    - name: Install Firewalld (if missing)
+      dnf:
+        name: firewalld
+        state: present
+    
+    - name: Start and Enable Firewalld Service
+      systemd:
+        name: firewalld
+        state: started
+        enabled: yes
+
+- name: Open Firewall Ports
+  firewalld:
+    port: "{{ item }}"
+    permanent: yes
+    state: enabled
+    immediate: yes
+  loop:
+    - 8200/tcp # Vault API
+    - 8201/tcp # Vault Cluster
+
+- name: Allow VRRP for Keepalived
+  firewalld:
+    rich_rule: 'rule protocol value="vrrp" accept'
+    permanent: yes
+    state: enabled
+    immediate: yes
+
+- name: Create Vault TLS directory
+  file:
+    path: /opt/vault/tls
+    state: directory
+    owner: vault
+    group: vault
+    mode: '0750'
+
+- name: Distribute Certificates
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: vault
+    group: vault
+    mode: '0640'
+  loop:
+    - { src: "{{ cert_dir }}/ca.crt", dest: "/opt/vault/tls/ca.crt" }
+    - { src: "{{ cert_dir }}/vault.crt", dest: "/opt/vault/tls/vault.crt" }
+    - { src: "{{ cert_dir }}/vault.key", dest: "/opt/vault/tls/vault.key" }
+  notify: Restart Vault
+
+- name: Copy CA certificate to system trust anchor
+  copy:
+    src: "{{ cert_dir }}/ca.crt"
+    dest: /etc/pki/ca-trust/source/anchors/vault-ca.crt
+    owner: root
+    group: root
+    mode: '0644'
+  register: ca_trust_update
+
+- name: Update System CA Trust Store
+  command: update-ca-trust
+  when: ca_trust_update.changed
+
+- name: Configure Vault (vault.hcl)
+  template:
+    src: vault.hcl.j2
+    dest: /etc/vault.d/vault.hcl
+    owner: vault
+    group: vault
+    mode: '0640'
+  notify: Restart Vault
+
+- name: Enable and Start Vault
+  systemd:
+    name: vault
+    enabled: yes
+    state: started
+
+- name: Configure Keepalived
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: Restart Keepalived
+
+- name: Enable and Start Keepalived
+  systemd:
+    name: keepalived
+    enabled: yes
+    state: started

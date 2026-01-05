@@ -1,0 +1,73 @@
+---
+- name: Install Security Audit Packages
+  dnf:
+    name:
+      - audit
+      - audit-rules
+    state: present
+
+- name: Ensure Auditd is running
+  service:
+    name: auditd
+    state: started
+    enabled: yes
+
+- name: Set password complexity and policy
+  copy:
+    dest: /etc/security/pwquality.conf
+    content: |
+      minlen = 12
+      dcredit = -1
+      ucredit = -1
+      ocredit = -1
+      lcredit = -1
+      dictcheck = 1
+
+- name: Configure account lockout policy
+  copy:
+    dest: /etc/security/faillock.conf
+    content: |
+      deny = 10
+      unlock_time = 1800
+      root_unlock_time = 1800
+
+- name: Disable insecure services
+  dnf:
+    name: [telnet-server, rsh-server, ypserv, tftp-server, vsftpd, talk-server]
+    state: absent
+
+- name: Hardening SSH Configuration
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: "^PermitRootLogin", line: "PermitRootLogin prohibit-password" }
+    - { regexp: "^MaxAuthTries", line: "MaxAuthTries 3" }
+    - { regexp: "^LoginGraceTime", line: "LoginGraceTime 60" }
+    - { regexp: "^KexAlgorithms", line: "KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256" }
+    - { regexp: "^Ciphers", line: "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com" }
+  notify: Restart SSHD
+
+- name: Ensure audit rules directory exists
+  file:
+    path: /etc/audit/rules.d
+    state: directory
+    mode: '0750'
+
+- name: Advanced Auditd Rules
+  blockinfile:
+    path: /etc/audit/rules.d/audit.rules
+    create: yes
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: PCI-DSS"
+    block: |
+      -a always,exit -F arch=b64 -S execve -k audit_cmds
+      -w /etc/shadow -p wa -k auth_files
+      -w /etc/sudoers -p wa -k priv_esc
+      -a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time_change
+  notify: Restart Auditd
+
+- name: Set Global Session Timeout (900s)
+  copy:
+    dest: /etc/profile.d/timeout.sh
+    content: "readonly TMOUT=900; export TMOUT"

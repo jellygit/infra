@@ -1,0 +1,65 @@
+---
+# 인증서 생성은 한 번만, 로컬호스트에서 실행
+- name: Create certificate directory
+  file:
+    path: "{{ cert_dir }}"
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  run_once: true
+  become: no
+
+- name: Generate Root CA Private Key
+  community.crypto.openssl_privatekey:
+    path: "{{ cert_dir }}/ca.key"
+  delegate_to: localhost
+  run_once: true
+  become: no
+
+- name: Generate Root CA CSR
+  community.crypto.openssl_csr:
+    path: "{{ cert_dir }}/ca.csr"
+    privatekey_path: "{{ cert_dir }}/ca.key"
+    common_name: "Vault Root CA"
+    basic_constraints: "CA:TRUE"
+  delegate_to: localhost
+  run_once: true
+  become: no
+
+- name: Generate Root CA Certificate (Self-Signed)
+  community.crypto.x509_certificate:
+    path: "{{ cert_dir }}/ca.crt"
+    privatekey_path: "{{ cert_dir }}/ca.key"
+    csr_path: "{{ cert_dir }}/ca.csr"
+    provider: selfsigned
+  delegate_to: localhost
+  run_once: true
+  become: no
+
+- name: Generate Vault Wildcard Private Key
+  community.crypto.openssl_privatekey:
+    path: "{{ cert_dir }}/vault.key"
+  delegate_to: localhost
+  run_once: true
+  become: no
+
+- name: Generate Vault Wildcard CSR
+  community.crypto.openssl_csr:
+    path: "{{ cert_dir }}/vault.csr"
+    privatekey_path: "{{ cert_dir }}/vault.key"
+    common_name: "*.{{ domain_name }}"
+    subject_alt_name: "{{ vault_full_san_list }}"
+  delegate_to: localhost
+  run_once: true
+  become: no
+
+- name: Generate Vault Wildcard Certificate (Signed by CA)
+  community.crypto.x509_certificate:
+    path: "{{ cert_dir }}/vault.crt"
+    csr_path: "{{ cert_dir }}/vault.csr"
+    provider: ownca
+    ownca_path: "{{ cert_dir }}/ca.crt"
+    ownca_privatekey_path: "{{ cert_dir }}/ca.key"
+  delegate_to: localhost
+  run_once: true
+  become: no

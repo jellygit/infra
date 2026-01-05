@@ -1,0 +1,40 @@
+---
+- name: Set System Hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: Update /etc/hosts with Infrastructure IPs
+  blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} ANSIBLE MANAGED BLOCK: INFRA"
+    block: |
+      {{ infra_ips.backup_srv }} {{ infra_domains.backup }}
+      {{ infra_ips.vault_srv }} {{ infra_domains.vault }}
+    state: present
+
+- name: Distribute Root CA Certificate
+  copy:
+    src: "certs/ca.crt"
+    dest: "/etc/pki/ca-trust/source/anchors/internal-ca.crt"
+    owner: root
+    group: root
+    mode: '0644'
+  register: ca_update
+  notify: Update CA Trust Store
+
+- name: Find conflicting certificate files
+  find:
+    paths: /etc/pki/tls/certs
+    patterns: '????????.?'
+    file_type: file
+    recurse: no
+  register: conflicting_certs
+  when: ca_update.changed
+
+- name: Remove conflicting certificate files
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ conflicting_certs.files | default([]) }}"
+  when: ca_update.changed
+  notify: Update CA Trust Store

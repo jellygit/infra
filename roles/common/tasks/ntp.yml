@@ -1,0 +1,49 @@
+---
+- name: Load ptp_kvm module for KVM guests
+  block:
+    - name: Ensure ptp_kvm is loaded now
+      modprobe:
+        name: ptp_kvm
+        state: present
+
+    - name: Ensure ptp_kvm loads on boot
+      copy:
+        dest: /etc/modules-load.d/ptp_kvm.conf
+        content: "ptp_kvm"
+        owner: root
+        group: root
+        mode: '0644'
+  when: 
+    - ansible_facts['virtualization_role'] == "guest"
+    - ansible_facts['virtualization_type'] == "kvm"
+
+- name: Install Time Sync Packages
+  dnf:
+    name:
+      - chrony
+      - "{{ 'linuxptp' if ansible_facts['virtualization_role'] == 'guest' else omit }}"
+    state: present
+
+- name: Re-collect facts to detect /dev/ptp0
+  stat:
+    path: /dev/ptp0
+  register: ptp_device
+
+- name: Allow Chrony to access PTP device (SELinux)
+  shell: |
+    semanage fcontext -a -t chronyd_var_lib_t "/dev/ptp0" || true
+    restorecon -v /dev/ptp0
+  when: ptp_device.stat.exists
+  failed_when: false
+
+- name: Configure Chrony
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony.conf
+  notify: Restart Chronyd
+
+- name: Ensure Chronyd is Enabled
+  service:
+    name: chronyd
+    state: started
+    enabled: yes

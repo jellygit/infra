@@ -1,0 +1,24 @@
+---
+- name: Restart SSHD
+  service:
+    name: sshd
+    state: restarted
+
+- name: Restart Auditd
+  shell: "/usr/sbin/augenrules --load"
+  ignore_errors: yes
+  notify: Reload Auditd Service
+
+- name: Reload Auditd Service
+  service:
+    name: auditd
+    state: restarted
+  ignore_errors: yes
+
+- name: Restart Chronyd
+  service:
+    name: chronyd
+    state: restarted
+
+- name: Update CA Trust Store
+  command: /usr/bin/update-ca-trust

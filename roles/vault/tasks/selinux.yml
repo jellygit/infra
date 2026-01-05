@@ -1,0 +1,31 @@
+---
+- name: Install SELinux tools
+  dnf:
+    name:
+      - policycoreutils-python-utils
+      - checkpolicy
+    state: present
+
+- name: Create SELinux policy file for Keepalived to access Vault port
+  copy:
+    dest: /root/keepalived_vault.te
+    content: |
+      module keepalived_vault 1.0;
+
+      require {
+          type keepalived_t;
+          type unreserved_port_t;
+          class tcp_socket name_connect;
+      }
+
+      #============= keepalived_t ==============
+      allow keepalived_t unreserved_port_t:tcp_socket name_connect;
+
+- name: Compile SELinux policy module
+  command: checkmodule -M -m -o /root/keepalived_vault.mod /root/keepalived_vault.te
+
+- name: Package SELinux policy module
+  command: semodule_package -o /root/keepalived_vault.pp -m /root/keepalived_vault.mod
+
+- name: Install SELinux policy module
+  command: semodule -i /root/keepalived_vault.pp

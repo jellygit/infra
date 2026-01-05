@@ -1,0 +1,11 @@
+---
+# roles/common/tasks/main.yml
+
+- name: Import Base Configuration
+  import_tasks: base.yml
+
+- name: Import NTP Configuration
+  import_tasks: ntp.yml
+
+- name: Import OS Hardening
+  import_tasks: hardening.yml
